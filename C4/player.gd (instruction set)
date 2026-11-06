@@ -1,0 +1,68 @@
+Starting from the previous version of `Player.gd`, make these changes in order:
+
+1. Add the jump velocity variable.
+
+After:
+
+@export var gravity: float = 980.0
+
+Add:
+
+@export var jump_velocity: float = -420.0
+
+
+2. Add the two controller references.
+
+After:
+
+@onready var grapple_controller = $GrappleController
+
+Add:
+
+@onready var wall_grab_controller = $WallGrabController
+@onready var dash_controller = $DashController
+
+
+3. Add the jump request variable.
+
+After the `@onready` declarations, add:
+
+var jump_requested: bool = false
+
+
+4. Add Space-key input handling.
+
+Insert this entire function immediately before `_physics_process()`:
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if event.physical_keycode == KEY_SPACE and event.is_pressed() and not event.is_echo():
+			jump_requested = true
+
+
+5. Replace the existing `_physics_process()` function entirely.
+
+Replace the old function, starting from:
+
+func _physics_process(_delta: float) -> void:
+
+through its final line, with the updated `_physics_process(delta)` implementation that integrates:
+
+- Wall detection and wall-cling state updates.
+- Left Shift dash activation and direction detection.
+- Dash duration and cooldown updates through `DashController`.
+- Normal jumping and wall jumping using Space.
+- Movement priority: dash → wall cling → grapple → wall-jump lock → normal movement.
+- Dash and wall-cling animation handling.
+- Existing grapple physics calls before and after `move_and_slide()`.
+
+6. Preserve the existing grapple integration.
+
+Do not remove or modify:
+
+grapple_controller.apply_physics_before_move(delta)
+move_and_slide()
+grapple_controller.apply_physics_after_move()
+
+
+Ensure the updated script uses `delta` consistently instead of `_delta`.
