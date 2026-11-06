@@ -1,0 +1,133 @@
+extends CharacterBody2D
+
+@export var speed: float = 220.0
+@export var gravity: float = 980.0
+@export var jump_velocity: float = -420.0
+@export var grapple_air_control: float = 450.0
+
+@onready var animated_sprite: AnimatedSprite2D = $AnimatedSprite2D
+@onready var grapple_controller = $GrappleController
+@onready var wall_grab_controller = $WallGrabController
+@onready var dash_controller = $DashController
+
+var jump_requested: bool = false
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if event.physical_keycode == KEY_SPACE and event.is_pressed() and not event.is_echo():
+			jump_requested = true
+
+
+func _physics_process(delta: float) -> void:
+	var direction: float = 0.0
+
+	if Input.is_physical_key_pressed(KEY_A):
+		direction -= 1.0
+
+	if Input.is_physical_key_pressed(KEY_D):
+		direction += 1.0
+
+	# Update wall detection.
+	# Wall grabbing is disabled while grappling or dashing.
+	wall_grab_controller.update_wall_state(
+		delta,
+		grapple_controller.is_grappling() or dash_controller.is_dashing()
+	)
+
+	# Check for a new dash request.
+	if Input.is_action_just_pressed("dash"):
+		if not grapple_controller.is_grappling() and not wall_grab_controller.is_clinging():
+			var dash_direction: float = direction
+
+			# If no movement key is pressed, use the facing direction.
+			if is_zero_approx(dash_direction):
+				dash_direction = -1.0 if animated_sprite.flip_h else 1.0
+
+			if dash_controller.try_start_dash(dash_direction):
+				animated_sprite.flip_h = dash_direction < 0.0
+
+	# Update the dash timer and velocity.
+	var dash_active: bool = dash_controller.update_dash(delta)
+
+	# Handle gravity and jumping.
+	if dash_active:
+		# Ignore jump input during a dash.
+		jump_requested = false
+
+	elif wall_grab_controller.is_clinging():
+		if jump_requested:
+			wall_grab_controller.perform_wall_jump()
+		else:
+			velocity = Vector2.ZERO
+
+		jump_requested = false
+
+	else:
+		if not is_on_floor():
+			velocity.y += gravity * delta
+
+		if jump_requested and is_on_floor():
+			velocity.y = jump_velocity
+
+		jump_requested = false
+
+	# Horizontal movement.
+	if dash_active:
+		# DashController handles horizontal velocity.
+		pass
+
+	elif wall_grab_controller.is_clinging():
+		velocity = Vector2.ZERO
+
+	elif grapple_controller.is_grappling():
+		velocity.x += direction * grapple_air_control * delta
+
+	elif wall_grab_controller.is_wall_jump_locked():
+		# Preserve wall-jump launch momentum briefly.
+		pass
+
+	else:
+		velocity.x = direction * speed
+
+	# Apply grapple constraint before movement.
+	grapple_controller.apply_physics_before_move(delta)
+
+	# Move the player.
+	move_and_slide()
+
+	# Correct rope distance after movement.
+	grapple_controller.apply_physics_after_move()
+
+	# Animations.
+	if dash_active:
+		if animated_sprite.sprite_frames != null and animated_sprite.sprite_frames.has_animation("dash"):
+			if animated_sprite.animation != "dash":
+				animated_sprite.play("dash")
+		else:
+			animated_sprite.play("jump")
+
+		animated_sprite.flip_h = dash_controller.get_dash_direction() < 0.0
+
+	elif wall_grab_controller.is_clinging():
+		if animated_sprite.sprite_frames != null and animated_sprite.sprite_frames.has_animation("wall_cling"):
+			animated_sprite.play("wall_cling")
+		else:
+			animated_sprite.play("jump")
+
+		animated_sprite.flip_h = (
+			wall_grab_controller.get_cling_normal().x > 0.0
+		)
+
+	elif not is_on_floor():
+		animated_sprite.play("jump")
+
+	elif direction == 0.0:
+		animated_sprite.play("idle")
+
+	else:
+		animated_sprite.play("run")
+
+	# Update facing direction during normal movement only.
+	if direction != 0.0 and not dash_active and not wall_grab_controller.is_clinging():
+		animated_sprite.flip_h = direction < 0.0
